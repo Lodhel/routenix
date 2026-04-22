@@ -1,0 +1,19 @@
+services:
+
+    api:
+        build:
+          context: .
+        command: uvicorn src.run:application --host 0.0.0.0 --port 2300 --reload --timeout-keep-alive 1000
+        volumes:
+            - .:/src/app
+        env_file:
+            - src/.env
+        logging:
+          options:
+            max-size: 10m
+        deploy:
+          resources:
+            reservations:
+              memory: 20M
+        ports:
+            - 2300:2300
