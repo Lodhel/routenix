@@ -1,4 +1,4 @@
-from sqlalchemy import asc, desc, or_, select
+from sqlalchemy import asc, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.models import Record
@@ -20,7 +20,7 @@ class RecordsBaseRouter(
                 filter_by=params.filter_by,
                 model_class=Record,
                 select_rel=select_rel,
-                allowed_keys=["is_active"],
+                allowed_keys=["id", "label"],
             )
         select_rel = self.set_order_by(params.order_by, select_rel)
         return await self.get_response_by_select_rel(session, params, select_rel)
@@ -80,9 +80,4 @@ class RecordsBaseRouter(
         if not search:
             return select_rel
         pattern = f"%{search}%"
-        return select_rel.where(
-            or_(
-                Record.label.ilike(pattern),
-                Record.slug.ilike(pattern),
-            )
-        )
+        return select_rel.where(Record.label.ilike(pattern))
