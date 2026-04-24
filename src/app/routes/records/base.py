@@ -1,5 +1,7 @@
+from sqlalchemy import asc, desc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.app.models import Record
 from src.app.orm_sender.manager_sqlalchemy import ManagerSQLAlchemy
 from src.app.routes.base.general_routes import GeneralBaseRouter
 from src.app.routes.general_models import GeneralHeadersModel, GeneralParamsWithFormat
@@ -11,88 +13,76 @@ class RecordsBaseRouter(
     GeneralBaseRouter,
     ManagerSQLAlchemy,
 ):
-    _records = [
-        {"id": 1, "label": "Элемент A", "code": "A-01", "is_active": True},
-        {"id": 2, "label": "Элемент B", "code": "B-01", "is_active": True},
-        {"id": 3, "label": "Элемент C", "code": "C-01", "is_active": False},
-    ]
-
     async def get_records(self, session: AsyncSession, params: GeneralParamsWithFormat):
-        del session
-        records = list(self._records)
-
-        if params.search:
-            pattern = params.search.lower()
-            records = [
-                record for record in records
-                if pattern in record["label"].lower() or pattern in record["code"].lower()
-            ]
-
+        select_rel = self.apply_search(params.search, Record, select(Record))
         if params.filter_by:
-            filters = self.parse_filter_by(params.filter_by, allowed_keys=["is_active"])
-            if "is_active" in filters:
-                bool_values = self._parse_bool_values(filters["is_active"])
-                records = [record for record in records if record["is_active"] in bool_values]
-
-        total = len(records)
-        records = self.set_order_by(params.order_by, records)
-
-        start = int(params.start) if params.start is not None else 0
-        limit = int(params.limit) if params.limit is not None else 20
-        start = max(start, 0)
-
-        if limit > 0:
-            records = records[start:start + limit]
-        else:
-            records = records[start:]
-
-        data = [{"id": record["id"], "label": record["label"]} for record in records]
-        return self.get_data(
-            data=data,
-            status_code=200,
-            meta={
-                "total": len(data),
-                "counts": total
-            },
-            fmt=params.response_fmt,
-            is_download=bool(params.is_download),
-        )
-
-    @staticmethod
-    def set_order_by(order_by: str, records: list[dict]) -> list[dict]:
-        order_map = {
-            "id_asc": ("id", False),
-            "id_desc": ("id", True),
-            "label_asc": ("label", False),
-            "label_desc": ("label", True),
-        }
-        field, is_reverse = order_map.get(order_by, ("id", False))
-        return sorted(records, key=lambda record: record[field], reverse=is_reverse)
-
-    @staticmethod
-    async def get_data_by_response_created(session, instance):
-        del session
-        return instance
-
-    @staticmethod
-    async def get_data_by_response(session, ids, params):
-        del session, ids, params
-        return []
-
-    @staticmethod
-    def _parse_bool_values(values: list[str]) -> set[bool]:
-        truthy = {"true", "1", "yes", "y", "on", "t"}
-        falsy = {"false", "0", "no", "n", "off", "f"}
-        result = set()
-        for raw_value in values:
-            value = raw_value.strip().lower()
-            if value in truthy:
-                result.add(True)
-            if value in falsy:
-                result.add(False)
-        return result or {True, False}
+            select_rel = self.apply_filter_by(
+                filter_by=params.filter_by,
+                model_class=Record,
+                select_rel=select_rel,
+                allowed_keys=["is_active"],
+            )
+        select_rel = self.set_order_by(params.order_by, select_rel)
+        return await self.get_response_by_select_rel(session, params, select_rel)
 
     async def validate_query(self, headers: GeneralHeadersModel):
         if not headers.authorization_token:
             return self.make_response_by_auth_error()
         return None
+
+    @classmethod
+    async def get_data_by_response(cls, session: AsyncSession, ids: list, params: GeneralParamsWithFormat):
+        if not ids:
+            return []
+        result = await session.execute(
+            cls.set_order_by(
+                params.order_by,
+                select(Record).where(Record.id.in_(ids)),
+            )
+        )
+        records = result.scalars().all()
+        return [record.data_by_list for record in records]
+
+    @staticmethod
+    def set_order_by(order_by: str, select_rel):
+        order_map = {
+            "id_asc": asc(Record.id),
+            "id_desc": desc(Record.id),
+            "label_asc": asc(Record.label),
+            "label_desc": desc(Record.label),
+        }
+        return select_rel.order_by(order_map[order_by]) if order_by in order_map else select_rel.order_by(asc(Record.id))
+
+    @staticmethod
+    async def get_data_by_response_created(session: AsyncSession, instance: Record):
+        result = await session.execute(select(Record).where(Record.id == instance.id))
+        record = result.scalar_one_or_none()
+        return record.data_by_list if record else {}
+
+    @staticmethod
+    async def get_data_by_response_default(session, ids, params):
+        del session, ids, params
+        return []
+
+    @staticmethod
+    async def get_data_by_response_sites(session, ids, site_id, params):
+        del session, ids, site_id, params
+        return []
+
+    @staticmethod
+    async def get_data_by_response_sites_identifications(session, ids, site_id, params):
+        del session, ids, site_id, params
+        return []
+
+    @staticmethod
+    def apply_search(search: str, model_class, select_rel):
+        del model_class
+        if not search:
+            return select_rel
+        pattern = f"%{search}%"
+        return select_rel.where(
+            or_(
+                Record.label.ilike(pattern),
+                Record.slug.ilike(pattern),
+            )
+        )
