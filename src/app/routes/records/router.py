@@ -6,7 +6,6 @@ from src.app.routes.general_models import GeneralHeadersModel, GeneralParamsWith
 from src.app.routes.records.base import RecordsBaseRouter
 from src.app.routes.records.models import RecordListResponse
 from src.app.routes.records.response_models import record_list_responses
-from src.app.routes.utils import make_data_by_response
 
 records_router = APIRouter()
 records_tags = ["Records"]
@@ -22,7 +21,6 @@ class RecordsRouter(RecordsBaseRouter):
         responses=record_list_responses,
         tags=records_tags,
     )
-    @make_data_by_response
     async def get(
         self,
         params: GeneralParamsWithFormat = Depends(),
