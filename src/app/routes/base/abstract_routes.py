@@ -21,19 +21,7 @@ class AbstractBaseRouter:
         pass
 
     @abstractstaticmethod
-    async def get_data_by_response_default(session, ids, params):
-        pass
-
-    @abstractstaticmethod
     async def get_data_by_response(session, ids, params):
-        pass
-
-    @abstractstaticmethod
-    async def get_data_by_response_sites(session, ids, site_id, params):
-        pass
-
-    @abstractstaticmethod
-    async def get_data_by_response_sites_identifications(session, ids, site_id, params):
         pass
 
     @abstractstaticmethod
